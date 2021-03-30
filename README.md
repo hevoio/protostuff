@@ -1,6 +1,16 @@
 
 ![Protostuff](https://protostuff.github.io/images/protostuff_300x100.png)
 
+---
+## HEVO Modifications
+
+- Currently the branch has been forked from tag protostuff-1.7.2
+- DefaultIdStrategy: It uses FQCN by default to register the class names. A registry of FQCN name against short name has been created so that the serialized size is small.
+- pom.xml: Changed the java version 
+- To Build: `set JAVA_HOME=/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home` && `mvn install && mvn eclipse:eclipse`
+- Copy the jar in `protostuff-uberjar\target\protostuff-uberjar-1.7.2.jar` to Hevo application
+--- 
+
 A java serialization library with built-in support for forward-backward compatibility (schema evolution) and validation.
 
 - **efficient**, both in speed and memory

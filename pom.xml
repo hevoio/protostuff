@@ -25,7 +25,7 @@
     <stringtemplate-version>3.2.1</stringtemplate-version>
     <mavenVersion>3.2.3</mavenVersion>
     <jmh.version>1.6.1</jmh.version>
-    <javac.target>1.6</javac.target>
+    <javac.target>1.8</javac.target>
   </properties>
 
   <developers>
@@ -118,16 +118,16 @@
 
     <pluginManagement>
       <plugins>
-		<plugin>
-			<groupId>org.apache.maven.plugins</groupId>
-			<artifactId>maven-eclipse-plugin</artifactId>
-			<version>2.8</version>
-			<configuration>
-				<downloadSources>true</downloadSources>
-				<downloadJavadocs>true</downloadJavadocs>
-				<wtpversion>2.0</wtpversion>
-			</configuration>
-		</plugin>      
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-eclipse-plugin</artifactId>
+          <version>2.8</version>
+          <configuration>
+            <downloadSources>true</downloadSources>
+            <downloadJavadocs>true</downloadJavadocs>
+            <wtpversion>2.0</wtpversion>
+          </configuration>
+        </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
@@ -219,6 +219,7 @@
             </execution>
           </executions>
           <configuration>
+            <source>8</source>
             <excludePackageNames>com.google.*:org.apache.*:org.codehaus.*:javax.*:com.sun.*</excludePackageNames>
             <tags>
               <tag>
@@ -457,7 +458,7 @@
     <module>protostuff-runtime-registry</module>
     <module>protostuff-runtime-view</module>
     <module>protostuff-json</module>
-    <module>protostuff-msgpack</module>    
+    <module>protostuff-msgpack</module>
     <module>protostuff-xml</module>
     <module>protostuff-yaml</module>
     <module>protostuff-kvp</module>

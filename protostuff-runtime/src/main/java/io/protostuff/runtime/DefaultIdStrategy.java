@@ -19,19 +19,21 @@ import io.protostuff.Schema;
 
 import java.io.IOException;
 import java.lang.reflect.Modifier;
-import java.util.Collection;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The FQCN(fully qualified class name) will serve as the id (string). Does not need any registration in the user-code
  * (works out-of-the-box). The size of serialized representation may be not very efficient.
- * 
+ *
  * @author Leo Romanoff
  * @author David Yu
  */
 public final class DefaultIdStrategy extends IdStrategy
 {
+    final static Set<String> SHORT_NAMES = new HashSet<String>();
+    final static Map<String, String> FQCN_TO_SHORT_NAME = new HashMap<String, String>();
+    final static Map<String, String> SHORT_NAME_TO_FQCN = new HashMap<String, String>();
 
     final ConcurrentHashMap<String, HasSchema<?>> pojoMapping = new ConcurrentHashMap<String, HasSchema<?>>();
 
@@ -52,15 +54,33 @@ public final class DefaultIdStrategy extends IdStrategy
     {
         super(DEFAULT_FLAGS, primaryGroup, groupId);
     }
-    
+
     public DefaultIdStrategy(int flags)
     {
         super(flags, null, 0);
     }
-    
+
     public DefaultIdStrategy(int flags, IdStrategy primaryGroup, int groupId)
     {
         super(flags, primaryGroup, groupId);
+    }
+
+    public static synchronized void registerShortFQCN(Class clazz, String shortName) {
+        String className = clazz.getName();
+        if(!FQCN_TO_SHORT_NAME.containsKey(className)) {
+            FQCN_TO_SHORT_NAME.put(className, shortName);
+            SHORT_NAME_TO_FQCN.put(shortName, className);
+            SHORT_NAMES.add(shortName);
+        }
+    }
+
+    private static String longToShortName(String fullName) {
+        String shortName = FQCN_TO_SHORT_NAME.get(fullName);
+        return null == shortName ? fullName: shortName;
+    }
+    private static String shortToLongName(String shortName) {
+        String longName = FQCN_TO_SHORT_NAME.get(shortName);
+        return null == longName ? shortName: longName;
     }
 
     /**
@@ -71,13 +91,13 @@ public final class DefaultIdStrategy extends IdStrategy
     {
         assert typeClass != null && schema != null;
 
-        final HasSchema<?> last = pojoMapping.putIfAbsent(typeClass.getName(),
+        final HasSchema<?> last = pojoMapping.putIfAbsent(longToShortName(typeClass.getName()),
                 new Registered<T>(schema, this));
 
         return last == null
                 || (last instanceof Registered<?> && ((Registered<?>) last).schema == schema);
     }
-    
+
     /**
      * Registers a pojo. Returns true if registration is successful or if the same exact schema was previously
      * registered.
@@ -86,9 +106,9 @@ public final class DefaultIdStrategy extends IdStrategy
     {
         assert typeClass != null;
 
-        final HasSchema<?> last = pojoMapping.putIfAbsent(typeClass.getName(),
+        final HasSchema<?> last = pojoMapping.putIfAbsent(longToShortName(typeClass.getName()),
                 new LazyRegister<T>(typeClass, this));
-        
+
         return last == null || (last instanceof LazyRegister);
     }
 
@@ -97,7 +117,7 @@ public final class DefaultIdStrategy extends IdStrategy
      */
     public <T extends Enum<T>> boolean registerEnum(Class<T> enumClass)
     {
-        return null == enumMapping.putIfAbsent(enumClass.getName(),
+        return null == enumMapping.putIfAbsent(longToShortName(enumClass.getName()),
                 EnumIO.newEnumIO(enumClass, this));
     }
 
@@ -114,7 +134,7 @@ public final class DefaultIdStrategy extends IdStrategy
      */
     public <T> boolean registerDelegate(String className, Delegate<T> delegate)
     {
-        return null == delegateMapping.putIfAbsent(className, new HasDelegate<T>(delegate, this));
+        return null == delegateMapping.putIfAbsent(longToShortName(className), new HasDelegate<T>(delegate, this));
     }
 
     /**
@@ -122,8 +142,8 @@ public final class DefaultIdStrategy extends IdStrategy
      */
     public boolean registerCollection(CollectionSchema.MessageFactory factory)
     {
-        return null == collectionMapping.putIfAbsent(factory.typeClass()
-                .getName(), factory);
+        return null == collectionMapping.putIfAbsent(longToShortName(factory.typeClass()
+                .getName()), factory);
     }
 
     /**
@@ -131,7 +151,7 @@ public final class DefaultIdStrategy extends IdStrategy
      */
     public boolean registerMap(MapSchema.MessageFactory factory)
     {
-        return null == mapMapping.putIfAbsent(factory.typeClass().getName(),
+        return null == mapMapping.putIfAbsent(longToShortName(factory.typeClass().getName()),
                 factory);
     }
 
@@ -149,7 +169,7 @@ public final class DefaultIdStrategy extends IdStrategy
                     + " cannot be an interface/abstract class.");
         }
 
-        final HasSchema<?> last = pojoMapping.putIfAbsent(baseClass.getName(),
+        final HasSchema<?> last = pojoMapping.putIfAbsent(longToShortName(baseClass.getName()),
                 new Mapped<T>(baseClass, typeClass, this));
 
         return last == null
@@ -159,14 +179,14 @@ public final class DefaultIdStrategy extends IdStrategy
     @Override
     public boolean isDelegateRegistered(Class<?> typeClass)
     {
-        return delegateMapping.containsKey(typeClass.getName());
+        return delegateMapping.containsKey(longToShortName(typeClass.getName()));
     }
 
     @Override
     @SuppressWarnings("unchecked")
     public <T> HasDelegate<T> getDelegateWrapper(Class<? super T> typeClass)
     {
-        return (HasDelegate<T>) delegateMapping.get(typeClass.getName());
+        return (HasDelegate<T>) delegateMapping.get(longToShortName(typeClass.getName()));
     }
 
     @Override
@@ -174,31 +194,31 @@ public final class DefaultIdStrategy extends IdStrategy
     public <T> Delegate<T> getDelegate(Class<? super T> typeClass)
     {
         final HasDelegate<T> last = (HasDelegate<T>) delegateMapping
-                .get(typeClass.getName());
+                .get(longToShortName(typeClass.getName()));
         return last == null ? null : last.delegate;
     }
 
     @Override
     public boolean isRegistered(Class<?> typeClass)
     {
-        final HasSchema<?> last = pojoMapping.get(typeClass.getName());
+        final HasSchema<?> last = pojoMapping.get(longToShortName(typeClass.getName()));
         return last != null && !(last instanceof Lazy<?>);
     }
 
     @SuppressWarnings("unchecked")
     private <T> HasSchema<T> getSchemaWrapper(String className, boolean load)
     {
-        HasSchema<T> hs = (HasSchema<T>) pojoMapping.get(className);
+        HasSchema<T> hs = (HasSchema<T>) pojoMapping.get(longToShortName(className));
         if (hs == null)
         {
             if (!load)
                 return null;
 
-            final Class<T> typeClass = RuntimeEnv.loadClass(className);
+            final Class<T> typeClass = RuntimeEnv.loadClass(shortToLongName(className));
 
             hs = new Lazy<T>(typeClass, this);
             final HasSchema<T> last = (HasSchema<T>) pojoMapping.putIfAbsent(
-                    typeClass.getName(), hs);
+                    longToShortName(typeClass.getName()), hs);
             if (last != null)
                 hs = last;
         }
@@ -210,12 +230,12 @@ public final class DefaultIdStrategy extends IdStrategy
     @SuppressWarnings("unchecked")
     public <T> HasSchema<T> getSchemaWrapper(Class<T> typeClass, boolean create)
     {
-        HasSchema<T> hs = (HasSchema<T>) pojoMapping.get(typeClass.getName());
+        HasSchema<T> hs = (HasSchema<T>) pojoMapping.get(longToShortName(typeClass.getName()));
         if (hs == null && create)
         {
             hs = new Lazy<T>(typeClass, this);
             final HasSchema<T> last = (HasSchema<T>) pojoMapping.putIfAbsent(
-                    typeClass.getName(), hs);
+                    longToShortName(typeClass.getName()), hs);
             if (last != null)
                 hs = last;
         }
@@ -225,18 +245,18 @@ public final class DefaultIdStrategy extends IdStrategy
 
     private EnumIO<? extends Enum<?>> getEnumIO(String className, boolean load)
     {
-        EnumIO<?> eio = enumMapping.get(className);
+        EnumIO<?> eio = enumMapping.get(longToShortName(className));
         if (eio == null)
         {
             if (!load)
                 return null;
 
-            final Class<?> enumClass = RuntimeEnv.loadClass(className);
+            final Class<?> enumClass = RuntimeEnv.loadClass(shortToLongName(className));
 
             eio = EnumIO.newEnumIO(enumClass, this);
 
             final EnumIO<?> existing = enumMapping.putIfAbsent(
-                    enumClass.getName(), eio);
+                    longToShortName(enumClass.getName()), eio);
             if (existing != null)
                 eio = existing;
         }
@@ -247,13 +267,13 @@ public final class DefaultIdStrategy extends IdStrategy
     @Override
     protected EnumIO<? extends Enum<?>> getEnumIO(Class<?> enumClass)
     {
-        EnumIO<?> eio = enumMapping.get(enumClass.getName());
+        EnumIO<?> eio = enumMapping.get(longToShortName(enumClass.getName()));
         if (eio == null)
         {
             eio = EnumIO.newEnumIO(enumClass, this);
 
             final EnumIO<?> existing = enumMapping.putIfAbsent(
-                    enumClass.getName(), eio);
+                    longToShortName(enumClass.getName()), eio);
             if (existing != null)
                 eio = existing;
         }
@@ -267,7 +287,7 @@ public final class DefaultIdStrategy extends IdStrategy
     {
         final String className = clazz.getName();
         CollectionSchema.MessageFactory factory = collectionMapping
-                .get(className);
+                .get(longToShortName(className));
         if (factory == null)
         {
             if (className.startsWith("java.util") && CollectionSchema.MessageFactories.accept(clazz.getSimpleName()))
@@ -279,7 +299,7 @@ public final class DefaultIdStrategy extends IdStrategy
             {
                 factory = new RuntimeCollectionFactory(clazz);
                 CollectionSchema.MessageFactory f = collectionMapping
-                        .putIfAbsent(className, factory);
+                        .putIfAbsent(longToShortName(className), factory);
                 if (f != null)
                     factory = f;
             }
@@ -292,7 +312,7 @@ public final class DefaultIdStrategy extends IdStrategy
     protected MapSchema.MessageFactory getMapFactory(Class<?> clazz)
     {
         final String className = clazz.getName();
-        MapSchema.MessageFactory factory = mapMapping.get(className);
+        MapSchema.MessageFactory factory = mapMapping.get(longToShortName(className));
         if (factory == null)
         {
             if (className.startsWith("java.util") && MapSchema.MessageFactories.accept(clazz.getSimpleName()))
@@ -303,7 +323,7 @@ public final class DefaultIdStrategy extends IdStrategy
             else
             {
                 factory = new RuntimeMapFactory(clazz);
-                MapSchema.MessageFactory f = mapMapping.putIfAbsent(className,
+                MapSchema.MessageFactory f = mapMapping.putIfAbsent(longToShortName(className),
                         factory);
                 if (f != null)
                     factory = f;
@@ -315,27 +335,27 @@ public final class DefaultIdStrategy extends IdStrategy
 
     @Override
     protected void writeCollectionIdTo(Output output, int fieldNumber,
-            Class<?> clazz) throws IOException
+                                       Class<?> clazz) throws IOException
     {
         final CollectionSchema.MessageFactory factory = collectionMapping
-                .get(clazz.getName());
+                .get(longToShortName(clazz.getName()));
         if (factory == null && clazz.getName().startsWith("java.util")
-            && CollectionSchema.MessageFactories.accept(clazz.getSimpleName()))
+                && CollectionSchema.MessageFactories.accept(clazz.getSimpleName()))
         {
             // jdk collection
             // better not to register the jdk collection if using this strategy
             // as it saves space by not writing the full package
-            output.writeString(fieldNumber, clazz.getSimpleName(), false);
+            output.writeString(fieldNumber, longToShortName(clazz.getSimpleName()), false);
         }
         else
         {
-            output.writeString(fieldNumber, clazz.getName(), false);
+            output.writeString(fieldNumber, longToShortName(clazz.getName()), false);
         }
     }
 
     @Override
     protected void transferCollectionId(Input input, Output output,
-            int fieldNumber) throws IOException
+                                        int fieldNumber) throws IOException
     {
         input.transferByteRangeTo(output, true, fieldNumber, false);
     }
@@ -344,19 +364,19 @@ public final class DefaultIdStrategy extends IdStrategy
     protected CollectionSchema.MessageFactory resolveCollectionFrom(Input input)
             throws IOException
     {
-        final String className = input.readString();
+        final String className = longToShortName(input.readString());
         CollectionSchema.MessageFactory factory = collectionMapping
                 .get(className);
         if (factory == null)
         {
-            if (className.indexOf('.') == -1 && CollectionSchema.MessageFactories.accept(className))
+            if (className.indexOf('.') == -1 && CollectionSchema.MessageFactories.accept(className) && !SHORT_NAMES.contains(className))
             {
-                factory = CollectionSchema.MessageFactories.valueOf(className);
+                factory = CollectionSchema.MessageFactories.valueOf(shortToLongName(className));
             }
             else
             {
                 factory = new RuntimeCollectionFactory(
-                        RuntimeEnv.loadClass(className));
+                        RuntimeEnv.loadClass(shortToLongName(className)));
                 CollectionSchema.MessageFactory f = collectionMapping
                         .putIfAbsent(className, factory);
                 if (f != null)
@@ -371,18 +391,18 @@ public final class DefaultIdStrategy extends IdStrategy
     protected void writeMapIdTo(Output output, int fieldNumber, Class<?> clazz)
             throws IOException
     {
-        final MapSchema.MessageFactory factory = mapMapping.get(clazz);
+        final MapSchema.MessageFactory factory = mapMapping.get(longToShortName(clazz.getName()));
         if (factory == null && clazz.getName().startsWith("java.util")
-            && MapSchema.MessageFactories.accept(clazz.getSimpleName()))
+                && MapSchema.MessageFactories.accept(clazz.getSimpleName()))
         {
             // jdk map
             // better not to register the jdk map if using this strategy
             // as it saves space by not writing the full package
-            output.writeString(fieldNumber, clazz.getSimpleName(), false);
+            output.writeString(fieldNumber, longToShortName(clazz.getSimpleName()), false);
         }
         else
         {
-            output.writeString(fieldNumber, clazz.getName(), false);
+            output.writeString(fieldNumber, longToShortName(clazz.getName()), false);
         }
     }
 
@@ -397,17 +417,17 @@ public final class DefaultIdStrategy extends IdStrategy
     protected MapSchema.MessageFactory resolveMapFrom(Input input)
             throws IOException
     {
-        final String className = input.readString();
+        final String className = longToShortName(input.readString());
         MapSchema.MessageFactory factory = mapMapping.get(className);
         if (factory == null)
         {
-            if (className.indexOf('.') == -1 && MapSchema.MessageFactories.accept(className))
+            if (className.indexOf('.') == -1 && MapSchema.MessageFactories.accept(className) && !SHORT_NAMES.contains(className))
             {
                 factory = MapSchema.MessageFactories.valueOf(className);
             }
             else
             {
-                factory = new RuntimeMapFactory(RuntimeEnv.loadClass(className));
+                factory = new RuntimeMapFactory(RuntimeEnv.loadClass(shortToLongName(className)));
                 MapSchema.MessageFactory f = mapMapping.putIfAbsent(className,
                         factory);
                 if (f != null)
@@ -422,7 +442,7 @@ public final class DefaultIdStrategy extends IdStrategy
     protected void writeEnumIdTo(Output output, int fieldNumber, Class<?> clazz)
             throws IOException
     {
-        output.writeString(fieldNumber, clazz.getName(), false);
+        output.writeString(fieldNumber, longToShortName(clazz.getName()), false);
     }
 
     @Override
@@ -441,14 +461,14 @@ public final class DefaultIdStrategy extends IdStrategy
     @Override
     @SuppressWarnings("unchecked")
     protected <T> HasDelegate<T> tryWriteDelegateIdTo(Output output,
-            int fieldNumber, Class<T> clazz) throws IOException
+                                                      int fieldNumber, Class<T> clazz) throws IOException
     {
-        final HasDelegate<T> hd = (HasDelegate<T>) delegateMapping.get(clazz
-                .getName());
+        final HasDelegate<T> hd = (HasDelegate<T>) delegateMapping.get(longToShortName(clazz
+                .getName()));
         if (hd == null)
             return null;
 
-        output.writeString(fieldNumber, clazz.getName(), false);
+        output.writeString(fieldNumber, longToShortName(clazz.getName()), false);
 
         return hd;
     }
@@ -456,9 +476,9 @@ public final class DefaultIdStrategy extends IdStrategy
     @Override
     @SuppressWarnings("unchecked")
     protected <T> HasDelegate<T> transferDelegateId(Input input, Output output,
-            int fieldNumber) throws IOException
+                                                    int fieldNumber) throws IOException
     {
-        final String className = input.readString();
+        final String className = longToShortName(input.readString());
 
         final HasDelegate<T> hd = (HasDelegate<T>) delegateMapping
                 .get(className);
@@ -479,32 +499,32 @@ public final class DefaultIdStrategy extends IdStrategy
         final String className = input.readString();
 
         final HasDelegate<T> hd = (HasDelegate<T>) delegateMapping
-                .get(className);
+                .get(longToShortName(className));
         if (hd == null)
             throw new UnknownTypeException("delegate: " + className
                     + " (Outdated registry)");
 
         return hd;
     }
-    
+
     @Override
     protected <T> HasSchema<T> tryWritePojoIdTo(Output output, int fieldNumber,
-            Class<T> clazz, boolean registered) throws IOException
+                                                Class<T> clazz, boolean registered) throws IOException
     {
         HasSchema<T> hs = getSchemaWrapper(clazz, false);
         if (hs == null || (registered && hs instanceof Lazy<?>))
             return null;
-        
-        output.writeString(fieldNumber, clazz.getName(), false);
-        
+
+        output.writeString(fieldNumber, longToShortName(clazz.getName()), false);
+
         return hs;
     }
 
     @Override
     protected <T> HasSchema<T> writePojoIdTo(Output output, int fieldNumber,
-            Class<T> clazz) throws IOException
+                                             Class<T> clazz) throws IOException
     {
-        output.writeString(fieldNumber, clazz.getName(), false);
+        output.writeString(fieldNumber, longToShortName(clazz.getName()), false);
 
         // it is important to return the schema initialized (if it hasn't been).
         return getSchemaWrapper(clazz, true);
@@ -512,9 +532,9 @@ public final class DefaultIdStrategy extends IdStrategy
 
     @Override
     protected <T> HasSchema<T> transferPojoId(Input input, Output output,
-            int fieldNumber) throws IOException
+                                              int fieldNumber) throws IOException
     {
-        final String className = input.readString();
+        final String className = longToShortName(input.readString());
 
         final HasSchema<T> wrapper = getSchemaWrapper(className,
                 0 != (AUTO_LOAD_POLYMORPHIC_CLASSES & flags));
@@ -533,7 +553,7 @@ public final class DefaultIdStrategy extends IdStrategy
     protected <T> HasSchema<T> resolvePojoFrom(Input input, int fieldNumber)
             throws IOException
     {
-        final String className = input.readString();
+        final String className = longToShortName(input.readString());
 
         final HasSchema<T> wrapper = getSchemaWrapper(className,
                 0 != (AUTO_LOAD_POLYMORPHIC_CLASSES & flags));
@@ -546,9 +566,9 @@ public final class DefaultIdStrategy extends IdStrategy
 
     @Override
     protected <T> Schema<T> writeMessageIdTo(Output output, int fieldNumber,
-            Message<T> message) throws IOException
+                                             Message<T> message) throws IOException
     {
-        output.writeString(fieldNumber, message.getClass().getName(), false);
+        output.writeString(fieldNumber, longToShortName(message.getClass().getName()), false);
 
         return message.cachedSchema();
     }
@@ -558,12 +578,12 @@ public final class DefaultIdStrategy extends IdStrategy
             throws IOException
     {
         output.writeString(RuntimeFieldFactory.ID_ARRAY,
-                componentType.getName(), false);
+                longToShortName(componentType.getName()), false);
     }
 
     @Override
     protected void transferArrayId(Input input, Output output, int fieldNumber,
-            boolean mapped) throws IOException
+                                   boolean mapped) throws IOException
     {
         input.transferByteRangeTo(output, true, fieldNumber, false);
     }
@@ -577,6 +597,7 @@ public final class DefaultIdStrategy extends IdStrategy
 
     static Class<?> resolveClass(String className)
     {
+        className = shortToLongName(className);
         final RuntimeFieldFactory<Object> inline = RuntimeFieldFactory
                 .getInline(className);
 
@@ -611,24 +632,24 @@ public final class DefaultIdStrategy extends IdStrategy
 
     @Override
     protected void writeClassIdTo(Output output, Class<?> componentType,
-            boolean array) throws IOException
+                                  boolean array) throws IOException
     {
         final int id = array ? RuntimeFieldFactory.ID_CLASS_ARRAY
                 : RuntimeFieldFactory.ID_CLASS;
 
-        output.writeString(id, componentType.getName(), false);
+        output.writeString(id, longToShortName(componentType.getName()), false);
     }
 
     @Override
     protected void transferClassId(Input input, Output output, int fieldNumber,
-            boolean mapped, boolean array) throws IOException
+                                   boolean mapped, boolean array) throws IOException
     {
         input.transferByteRangeTo(output, true, fieldNumber, false);
     }
 
     @Override
     protected Class<?> resolveClassFrom(Input input, boolean mapped,
-            boolean array) throws IOException
+                                        boolean array) throws IOException
     {
         return resolveClass(input.readString());
     }
@@ -686,7 +707,7 @@ public final class DefaultIdStrategy extends IdStrategy
         }
 
     }
-    
+
     static final class Lazy<T> extends HasSchema<T>
     {
         final Class<T> typeClass;
@@ -756,7 +777,7 @@ public final class DefaultIdStrategy extends IdStrategy
         private volatile HasSchema<T> wrapper;
 
         Mapped(Class<? super T> baseClass, Class<T> typeClass,
-                IdStrategy strategy)
+               IdStrategy strategy)
         {
             super(strategy);
             this.baseClass = baseClass;
@@ -802,7 +823,7 @@ public final class DefaultIdStrategy extends IdStrategy
         }
 
     }
-    
+
     static final class LazyRegister<T> extends HasSchema<T>
     {
         final Class<T> typeClass;
@@ -830,10 +851,10 @@ public final class DefaultIdStrategy extends IdStrategy
                     }
                 }
             }
-            
+
             return schema;
         }
-        
+
         @Override
         public Pipe.Schema<T> getPipeSchema()
         {
@@ -849,7 +870,7 @@ public final class DefaultIdStrategy extends IdStrategy
                     }
                 }
             }
-            
+
             return pipeSchema;
         }
     }
