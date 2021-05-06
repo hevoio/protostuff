@@ -79,7 +79,7 @@ public final class DefaultIdStrategy extends IdStrategy
         return null == shortName ? fullName: shortName;
     }
     private static String shortToLongName(String shortName) {
-        String longName = FQCN_TO_SHORT_NAME.get(shortName);
+        String longName = SHORT_NAME_TO_FQCN.get(shortName);
         return null == longName ? shortName: longName;
     }
 
